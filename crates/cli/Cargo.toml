@@ -1,0 +1,23 @@
+[package]
+name = "masscap-cli"
+description = "Headless MASSCAP recorder: disk throughput test, record, list devices"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive"] }
+env_logger = "0.11.11"
+log = "0.4.34"
+masscap-engine = { path = "../engine" }
+
+[features]
+default = []
+asio = ["masscap-engine/asio"]
+
+[target."cfg(unix)".dependencies]
+libc = "0.2"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation"] }

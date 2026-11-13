@@ -1,0 +1,33 @@
+[package]
+name = "masscap-engine"
+description = "Multichannel disk recorder engine: input, RAM cache, disk assignment, RF64 writers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", features = ["serde"] }
+cpal = "0.18.2"
+crossbeam-channel = "0.5.16"
+log = "0.4.34"
+parking_lot = "0.12.5"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+thiserror = "2.0.20"
+toml = "1.1.5"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.189"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_SystemInformation"] }
+
+[features]
+default = []
+# ASIO host via cpal. Windows only; needs the Steinberg ASIO SDK and LLVM at build time.
+asio = ["cpal/asio"]
+
+[dev-dependencies]
+tempfile = "3"
+serde_json = "1"

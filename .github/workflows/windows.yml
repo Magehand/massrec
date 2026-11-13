@@ -1,0 +1,33 @@
+name: windows
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-unix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace --locked
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install LLVM (bindgen for asio-sys)
+        run: choco install llvm -y --no-progress
+      - name: Tests (sim only)
+        run: cargo test --workspace --locked
+      - name: Release build with ASIO
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: cargo build --release --workspace --features masscap-cli/asio,masscap/asio --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: masscap-windows-x64
+          path: |
+            target/release/masscap.exe
+            target/release/masscap-cli.exe
