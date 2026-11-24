@@ -79,6 +79,20 @@ impl ChannelFile {
         Ok(())
     }
 
+    /// Drop the newest `bytes` of audio (whole frames): first from the staging
+    /// block, then from what is already on disk. `finalize` rewrites the header
+    /// from `data_bytes` and truncates the file, which removes the flushed tail.
+    pub fn trim(&mut self, bytes: usize) {
+        debug_assert_eq!(bytes % BYTES_PER_SAMPLE, 0);
+        let from_fill = bytes.min(self.fill);
+        self.fill -= from_fill;
+        let rest = (bytes - from_fill) as u64;
+        // Only reached with an empty staging block, so finalize writes nothing
+        // more at the (now unaligned) data_bytes offset.
+        debug_assert!(rest <= self.data_bytes);
+        self.data_bytes -= rest.min(self.data_bytes);
+    }
+
     pub fn rewrite_header(&mut self, hdr: &mut AlignedBuf) -> io::Result<()> {
         hdr.as_mut_slice()[..HEADER_LEN].copy_from_slice(&build_header(&self.spec, self.data_bytes));
         self.file.write_aligned(0, hdr, HEADER_LEN)
@@ -216,6 +230,9 @@ fn run(mut p: WriterParams) {
 
 /// Consume every channel exactly up to `end_frame`, then finalize files.
 fn drain(p: &mut WriterParams, end_frame: u64, failed: &mut bool, hdr: &mut AlignedBuf) {
+    // Before it saw `Stop`, the run loop may have pulled channels past
+    // `end_frame` (by up to a block or more on slow disks).
+    rewind_overshoot(p, end_frame, *failed);
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let mut pending = false;
@@ -260,6 +277,7 @@ fn drain(p: &mut WriterParams, end_frame: u64, failed: &mut bool, hdr: &mut Alig
         }
         std::thread::sleep(Duration::from_millis(1));
     }
+    rewind_overshoot(p, end_frame, *failed);
     for ch in p.channels.iter_mut() {
         match ch.file.finalize(hdr) {
             Ok(()) => p.channel_bytes[ch.index].store(ch.file.total_bytes(), Ordering::Relaxed),
@@ -269,6 +287,27 @@ fn drain(p: &mut WriterParams, end_frame: u64, failed: &mut bool, hdr: &mut Alig
                     let _ = p.msg.send(WriterMsg::Failed { disk: p.disk, error: e.to_string() });
                 }
             }
+        }
+    }
+}
+
+/// Put every channel that was consumed past `end_frame` back on it: trim the
+/// excess from the file and rewind the ring, so all files of the take end on the
+/// same frame and a continuation take starts every channel at `end_frame`.
+fn rewind_overshoot(p: &mut WriterParams, end_frame: u64, failed: bool) {
+    for ch in p.channels.iter_mut() {
+        let consumed = ch.consumer.consumed_frames();
+        if consumed <= end_frame {
+            continue;
+        }
+        let excess = ((consumed - end_frame) as usize) * BYTES_PER_SAMPLE;
+        if !failed {
+            ch.file.trim(excess);
+            p.disk_bytes.fetch_sub((excess as u64).min(p.disk_bytes.load(Ordering::Relaxed)), Ordering::Relaxed);
+            p.channel_bytes[ch.index].store(ch.file.total_bytes(), Ordering::Relaxed);
+        }
+        if !ch.consumer.rewind_to_frame(end_frame) {
+            log::error!("writer {}: channel {} consumed {consumed} frames, cannot rewind to {end_frame}", p.disk, ch.index + 1);
         }
     }
 }
@@ -356,5 +395,60 @@ mod tests {
             assert_eq!(channel_bytes[i].load(Ordering::Relaxed), 27_000);
         }
         assert_eq!(disk_bytes.load(Ordering::Relaxed), 81_000);
+    }
+
+    /// The writer has already pulled (and flushed) past the stop frame before it
+    /// sees `Stop`: files must still end exactly there and the rings must be
+    /// rewound so a continuation take starts on that frame.
+    #[test]
+    fn writer_trims_and_rewinds_overshoot() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut hdr = AlignedBuf::new(HEADER_LEN);
+        let block = crate::config::BLOCK_QUANTUM; // 4096 frames
+        let mut chans = Vec::new();
+        let mut producers = Vec::new();
+        for i in 0..3 {
+            let (p, c) = ring(block * 8);
+            producers.push(p);
+            let file = ChannelFile::create(dir.path().join(format!("ch{i}.wav")), spec(), block, block * (i + 1) / 3, &mut hdr).unwrap();
+            chans.push(WriterChannel { index: i, consumer: c, file });
+        }
+        let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
+        let (msg_tx, msg_rx) = crossbeam_channel::unbounded();
+        let channel_bytes = Arc::new((0..3).map(|_| AtomicU64::new(0)).collect::<Vec<_>>());
+        let h = spawn(WriterParams { disk: 0, channels: chans, cmd: cmd_rx, msg: msg_tx, channel_bytes: channel_bytes.clone(), disk_bytes: Arc::new(AtomicU64::new(0)), header_interval: Duration::from_secs(60), fail_after_bytes: None });
+        let blk: Vec<i32> = (0..1000).collect();
+        for _ in 0..10 {
+            for p in producers.iter_mut() {
+                p.push_i24(&blk);
+            }
+        }
+        // Let the writer flush two whole blocks (8192 frames) before it is told to stop at 5000.
+        let t0 = Instant::now();
+        while channel_bytes.iter().any(|b| b.load(Ordering::Relaxed) < 2 * block as u64) {
+            assert!(t0.elapsed() < Duration::from_secs(5), "writer did not pull the backlog");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        cmd_tx.send(WriterCmd::Stop { end_frame: 5000 }).unwrap();
+        match msg_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+            WriterMsg::Done { consumers, ok, .. } => {
+                assert!(ok);
+                for (_, c) in &consumers {
+                    assert_eq!(c.consumed_frames(), 5000);
+                    assert_eq!(c.available(), 5000 * 3);
+                }
+            }
+            _ => panic!("expected Done"),
+        }
+        h.join().unwrap();
+        for i in 0..3 {
+            let data = std::fs::read(dir.path().join(format!("ch{i}.wav"))).unwrap();
+            let hd = parse_header(&data).unwrap();
+            assert_eq!(hd.data_bytes, 5000 * 3);
+            assert_eq!(data.len() as u64, file_len(5000 * 3));
+            let tail = &data[HEADER_LEN + 4999 * 3..HEADER_LEN + 5000 * 3];
+            assert_eq!(tail, &999i32.to_le_bytes()[..3]);
+            assert_eq!(channel_bytes[i].load(Ordering::Relaxed), 15_000);
+        }
     }
 }

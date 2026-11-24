@@ -255,6 +255,25 @@ impl Consumer {
         self.inner.consumed.store(pos + n as u64, Ordering::Release);
         n
     }
+    /// Move the read cursor back to absolute stream frame `frame`, so data that
+    /// was consumed past it is delivered again. Refused (returns false) when
+    /// `frame` is ahead of the cursor, or when the producer may already be reusing
+    /// that region: only rewinds that keep the ring at most half full are allowed,
+    /// which leaves a producer that checked `free()` before the rewind plenty of
+    /// room for the chunk it is writing.
+    pub fn rewind_to_frame(&mut self, frame: u64) -> bool {
+        let target = frame * BYTES_PER_SAMPLE as u64;
+        let pos = self.inner.consumed.load(Ordering::Relaxed);
+        if target > pos {
+            return false;
+        }
+        let produced = self.inner.produced.load(Ordering::Acquire);
+        if produced - target > (self.inner.cap / 2) as u64 {
+            return false;
+        }
+        self.inner.consumed.store(target, Ordering::Release);
+        true
+    }
     /// Discard up to `bytes` (whole frames). Returns bytes skipped.
     pub fn skip(&mut self, bytes: usize) -> usize {
         let n = (bytes.min(self.available()) / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE;
@@ -324,6 +343,33 @@ mod tests {
         c.read(&mut out);
         assert_eq!(out[0], 15);
         assert_eq!(out[14], 19);
+    }
+
+    #[test]
+    fn rewind_redelivers_consumed_data() {
+        let (mut p, mut c) = ring(300); // 100 frames
+        for i in 0..20u8 {
+            p.push_bytes(&frames(1, i));
+        }
+        let mut out = vec![0u8; 15 * 3];
+        assert_eq!(c.read(&mut out), 45);
+        assert!(!c.rewind_to_frame(16), "cannot rewind forward");
+        assert!(c.rewind_to_frame(10));
+        assert_eq!(c.consumed_frames(), 10);
+        assert_eq!(c.available(), 30);
+        let mut out = vec![0u8; 3];
+        c.read(&mut out);
+        assert_eq!(out[0], 10);
+    }
+
+    #[test]
+    fn rewind_refuses_past_safe_window() {
+        let (mut p, mut c) = ring(300); // 100 frames
+        p.push_bytes(&frames(60, 1));
+        let mut out = vec![0u8; 60 * 3];
+        c.read(&mut out);
+        assert!(!c.rewind_to_frame(0), "60 frames back exceeds half the ring");
+        assert!(c.rewind_to_frame(10));
     }
 
     #[test]
