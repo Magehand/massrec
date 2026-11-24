@@ -23,6 +23,21 @@ jobs:
         run: choco install llvm -y --no-progress
       - name: Tests (sim only)
         run: cargo test --workspace --locked
+      # asio-sys can fetch the SDK itself, but its extraction uses Expand-Archive,
+      # which breaks on the runner's PowerShell 7. Fetch it here and point at it.
+      - name: Fetch ASIO SDK
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\asiosdk.zip"
+          $dir = "$env:RUNNER_TEMP\asiosdk"
+          Invoke-WebRequest https://www.steinberg.net/asiosdk -OutFile $zip
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          tar -xf $zip -C $dir
+          $h = Get-ChildItem $dir -Recurse -Filter asio.h | Where-Object { $_.Directory.Name -eq 'common' } | Select-Object -First 1
+          if (-not $h) { throw "ASIO SDK layout not recognised under $dir" }
+          $sdk = $h.Directory.Parent.FullName
+          if (-not (Test-Path "$sdk\host\asiodrivers.h")) { throw "asiodrivers.h missing under $sdk" }
+          "CPAL_ASIO_DIR=$sdk" >> $env:GITHUB_ENV
       - name: Release build with ASIO
         env:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
