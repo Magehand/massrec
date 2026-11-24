@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MASSCAP Advanced</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body class="advanced">
+<header class="bar">
+  <span class="brand">MASSCAP</span>
+  <span class="sep">|</span>
+  <label class="session"><span class="label">Session</span><input id="session" type="text" spellcheck="false" autocomplete="off"></label>
+  <span id="device" class="faint mono"></span>
+  <span class="grow"></span>
+  <span id="conn" class="conn">● connecting…</span>
+  <a href="/">← Simple</a>
+</header>
+
+<div class="transport">
+  <button id="rec" class="rec" disabled><span class="dot"></span><span id="rec-label">RECORD</span></button>
+  <div id="clock" class="clock">
+    <div class="label">Elapsed</div>
+    <div id="elapsed" class="big">00:00:00</div>
+    <div id="take" class="take"></div>
+  </div>
+  <div class="stat"><div class="label">Remaining</div><div id="remaining" class="value">—</div></div>
+  <div class="stat"><div class="label">Free</div><div id="free" class="value">—</div></div>
+  <div class="stat"><div class="label">Cache</div><div id="cache" class="value">—</div></div>
+  <div class="stat"><div class="label">Drops</div><div id="drops" class="value">0</div></div>
+  <div class="stat"><div class="label">Clips</div><div id="clips" class="value">0</div></div>
+  <div class="stat"><div class="label">No signal</div><div id="silent" class="value">0</div></div>
+  <div class="stat"><div class="label">Markers</div><div id="markers" class="value">0</div></div>
+  <button id="mark" class="chip" disabled>Marker<kbd>Space</kbd></button>
+  <span class="grow"></span>
+  <div id="health" class="pill ok">Connecting</div>
+</div>
+
+<div id="faultbar" class="faultbar hidden">
+  <span class="tag">ATTENTION</span>
+  <span id="faulttext" class="grow"></span>
+  <button id="show-faults" class="chip">Show only these</button>
+</div>
+
+<div id="failed" class="failed hidden">
+  <div class="title">INPUT NOT AVAILABLE</div>
+  <p id="failed-msg"></p>
+  <button id="use-sim" class="chip">Use simulated input</button>
+</div>
+
+<div class="workspace">
+  <div class="wall-col">
+    <div class="toolbar">
+      <button id="view-wall" class="chip active">Meter wall</button>
+      <button id="view-matrix" class="chip">Status matrix</button>
+      <label><input id="faults-only" type="checkbox"> Faults only</label>
+      <span class="grow"></span>
+      <span class="faint mono">click a channel for details</span>
+    </div>
+    <div id="wall-wrap" class="wall-wrap"><canvas id="wall"></canvas></div>
+    <div class="legend">
+      <span><i style="background:var(--green-meter)"></i>SIGNAL OK</span>
+      <span><i style="background:var(--hot)"></i>HOT</span>
+      <span><i style="background:var(--clip)"></i>CLIP</span>
+      <span><i style="background:var(--silent)"></i>NO SIGNAL</span>
+      <span><i style="background:var(--drop)"></i>DISK DROP</span>
+      <span class="grow"></span>
+      <span id="shown" class="faint"></span>
+    </div>
+  </div>
+
+  <aside class="side">
+    <section>
+      <div class="label">Selected channel</div>
+      <div style="margin-top:6px"><span id="sel-num" class="selnum">001</span><span id="sel-name" class="selname"></span></div>
+      <div class="selstate"><span id="sel-state" class="pill ok">Standby</span></div>
+    </section>
+    <section class="meter-row">
+      <canvas id="selmeter" width="48" height="150"></canvas>
+      <div class="kv">
+        <div class="label">Peak</div><div id="sel-peak" class="value big">—</div>
+        <div class="label">RMS</div><div id="sel-rms" class="value">—</div>
+        <div class="label">Clips this take</div><div id="sel-clips" class="value">0</div>
+        <div class="label">Dropped samples</div><div id="sel-drops" class="value">0</div>
+      </div>
+    </section>
+    <section>
+      <div class="label">Writing to</div>
+      <div id="sel-path" class="path"></div>
+      <div class="split"><span id="sel-bytes"></span><span id="sel-rate"></span></div>
+    </section>
+    <section>
+      <div class="label">Event log</div>
+      <div id="events" class="events"></div>
+    </section>
+  </aside>
+</div>
+
+<details class="disks" id="disks" open>
+  <summary><span class="label">Destinations</span> <span id="disk-summary" class="faint mono"></span></summary>
+  <div class="disks-body">
+    <div class="disk-table-wrap">
+      <table class="disk-table">
+        <thead><tr><th class="label">Path</th><th class="label">Free</th><th class="label">Throughput</th><th class="label">Channels</th><th class="label">Written</th><th class="label">Rate</th><th></th></tr></thead>
+        <tbody id="disk-rows"></tbody>
+      </table>
+    </div>
+    <div class="disk-add">
+      <span class="dim">Add folder</span>
+      <input id="add-path" type="text" placeholder="D:\MASSCAP" spellcheck="false" autocomplete="off">
+      <button id="add-btn" class="chip">Add</button>
+      <span class="dim" style="margin-left:12px">test size GB</span>
+      <input id="test-gb" type="number" min="1" step="1">
+    </div>
+    <div id="measure" class="progress hidden"><span id="measure-text"></span><div class="track"><div id="measure-fill" class="fill"></div></div><span id="measure-bytes"></span></div>
+    <div id="disk-msg" class="msg"></div>
+  </div>
+</details>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/static/common.js"></script>
+<script src="/static/advanced.js"></script>
+<script>MC.init();</script>
+</body>
+</html>

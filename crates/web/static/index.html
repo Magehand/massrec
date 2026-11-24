@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MASSCAP</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body class="simple">
+<header class="bar">
+  <span class="brand">MASSCAP</span>
+  <span class="sep">|</span>
+  <label class="session"><span class="label">Session</span><input id="session" type="text" spellcheck="false" autocomplete="off"></label>
+  <span id="device" class="faint mono"></span>
+  <span class="grow"></span>
+  <span id="conn" class="conn">● connecting…</span>
+  <a href="/advanced">Advanced →</a>
+</header>
+
+<div id="failed" class="failed hidden">
+  <div class="title">INPUT NOT AVAILABLE</div>
+  <p id="failed-msg"></p>
+  <button id="use-sim" class="chip">Use simulated input</button>
+</div>
+
+<main class="simple-main">
+  <div id="health" class="pill ok">Connecting</div>
+
+  <div id="clock" class="clock">
+    <div class="label">Elapsed</div>
+    <div id="elapsed" class="big">00:00:00</div>
+    <div id="take" class="take"></div>
+  </div>
+
+  <button id="rec" class="rec" disabled><span class="dot"></span><span id="rec-label">RECORD</span></button>
+  <button id="mark" class="chip" disabled>Marker<kbd>Space</kbd></button>
+
+  <div class="simple-stats">
+    <div class="stat"><div class="label">Time remaining on disk</div><div id="remaining" class="value">—</div></div>
+    <div class="stat"><div class="label">Free</div><div id="free" class="value">—</div></div>
+    <div class="stat"><div class="label">RAM cache</div><div id="cache" class="value">—</div></div>
+    <div class="stat"><div class="label">Dropped samples</div><div id="drops" class="value">0</div></div>
+    <div class="stat"><div class="label">Clips</div><div id="clips" class="value">0</div></div>
+    <div class="stat"><div class="label">Markers</div><div id="markers" class="value">0</div></div>
+  </div>
+
+  <div class="hint">Ctrl+R record · press twice within 2 s to stop · Space marker</div>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/static/common.js"></script>
+<script>MC.init();</script>
+</body>
+</html>
